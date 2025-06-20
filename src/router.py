@@ -1,0 +1,69 @@
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+from typing import List, Dict
+
+from .service import MentorService
+from .schemas import UserProfile
+
+router = APIRouter()
+
+
+class ChatRequest(BaseModel):
+    character: str
+    message: str
+
+
+class ChatResponse(BaseModel):
+    message: str
+    character: str
+
+
+@router.get("/")
+async def root():
+    return {"message": "Mentor API is running!"}
+
+
+@router.get("/profile", response_model=UserProfile, tags=["Profile"])
+async def get_profile():
+    """Get current user profile"""
+    return MentorService.get_profile()
+
+
+@router.post("/chat", response_model=ChatResponse, tags=["Chat"])
+async def chat(request: ChatRequest):
+    """Chat with a character"""
+    try:
+        ai_message = MentorService.chat_with_character(request.character, request.message)
+        return ChatResponse(
+            message=ai_message,
+            character=request.character,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/characters", tags=["Characters"])
+async def get_characters():
+    """Get available characters"""
+    return {"characters": MentorService.get_characters()}
+
+
+@router.get("/conversation", tags=["Conversation"])
+async def get_conversation():
+    """Get current conversation history"""
+    return {"conversation": MentorService.get_conversation()}
+
+
+@router.delete("/reset", tags=["Demo"])
+async def reset_demo():
+    """Reset conversation and profile for demo"""
+    MentorService.reset_demo()
+    return {"message": "Demo reset"}
+
+
+@router.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy"}

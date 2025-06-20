@@ -22,9 +22,14 @@ app.add_middleware(
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+class ChatMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
 class ChatRequest(BaseModel):
+    character: str = "main_mentor"
     message: str
-    character: str = "main_mentor"  # "main_mentor", "einstein", "shakespeare", etc.
+    history: List[ChatMessage]  # Full conversation history (excluding the new message)
 
 class ChatResponse(BaseModel):
     message: str
@@ -60,16 +65,18 @@ async def root():
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     try:
-        # Get the character prompt
+        # Validate character
         character = request.character
         if character not in CHARACTER_PROMPTS:
             raise HTTPException(status_code=400, detail=f"Unknown character: {character}")
         
-        # Build messages for OpenAI
-        messages = [
-            {"role": "system", "content": CHARACTER_PROMPTS[character]}
-        ]
+        # Start with system prompt
+        messages = [{"role": "system", "content": CHARACTER_PROMPTS[character]}]
         
+        # Add history provided by frontend
+        messages.extend(request.history)
+
+        # Add current user message
         messages.append({
             "role": "user",
             "content": request.message
@@ -80,20 +87,20 @@ async def chat(request: ChatRequest):
             model="gpt-4o-mini",
             store=True,
             messages=messages,
-            temperature=0.8,  # Adjust for creativity vs consistency
-            max_tokens=200    # Keep responses concise
+            temperature=0.8,
+            max_tokens=200
         )
         
-        # Extract the response
         ai_message = response.choices[0].message.content
-        
+
         return ChatResponse(
             message=ai_message,
             character=character
         )
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/characters")
 async def get_characters():

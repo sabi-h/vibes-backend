@@ -1,3 +1,4 @@
+import uuid
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -11,6 +12,9 @@ load_dotenv()
 
 app = FastAPI()
 
+session_store: Dict[str, List[Dict[str, str]]] = {}
+
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
@@ -22,18 +26,23 @@ app.add_middleware(
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+
 class ChatMessage(BaseModel):
     role: str  # "user" or "assistant"
     content: str
 
+
 class ChatRequest(BaseModel):
-    character: str = "main_mentor"
+    character: str
     message: str
-    history: List[ChatMessage]  # Full conversation history (excluding the new message)
+    session_id: str = None
+
 
 class ChatResponse(BaseModel):
     message: str
     character: str
+    session_id: str
+
 
 # Character prompts (your product person will improve these)
 CHARACTER_PROMPTS = {
@@ -44,58 +53,51 @@ CHARACTER_PROMPTS = {
     - Shakespeare for writing/creativity/storytelling
     - Marie Curie for chemistry/research/discovery
     Keep responses concise and engaging.""",
-    
     "einstein": """You are Albert Einstein. You explain physics and science with wonder and enthusiasm.
     Use thought experiments and simple analogies. Share your curiosity about how the universe works.
     Speak warmly and encouragingly, with occasional humor. Make complex ideas accessible.""",
-    
     "shakespeare": """You are William Shakespeare. You help students explore creative writing and storytelling.
     Speak poetically but not overly complex. Use metaphors and encourage imagination.
     Share wisdom about human nature and the power of words.""",
-    
     "marie_curie": """You are Marie Curie. You inspire students about chemistry, research, and perseverance.
     Share your passion for discovery and the scientific method. Be encouraging about challenges,
-    especially for young women in science."""
+    especially for young women in science.""",
 }
+
 
 @app.get("/")
 async def root():
     return {"message": "Mentor API is running!"}
 
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     try:
-        # Validate character
         character = request.character
         if character not in CHARACTER_PROMPTS:
             raise HTTPException(status_code=400, detail=f"Unknown character: {character}")
-        
-        # Start with system prompt
-        messages = [{"role": "system", "content": CHARACTER_PROMPTS[character]}]
-        
-        # Add history provided by frontend
-        messages.extend(request.history)
 
-        # Add current user message
-        messages.append({
-            "role": "user",
-            "content": request.message
-        })
-        
-        # Call OpenAI API
+        session_id = request.session_id or str(uuid.uuid4())
+        if session_id not in session_store:
+            # Start new session
+            session_store[session_id] = [{"role": "system", "content": CHARACTER_PROMPTS[character]}]
+
+        session_store[session_id].append({"role": "user", "content": request.message})
+
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            store=True,
-            messages=messages,
+            messages=session_store[session_id],
             temperature=0.8,
-            max_tokens=200
+            max_tokens=200,
         )
-        
+
         ai_message = response.choices[0].message.content
+        session_store[session_id].append({"role": "assistant", "content": ai_message})
 
         return ChatResponse(
             message=ai_message,
-            character=character
+            character=character,
+            session_id=session_id,
         )
 
     except Exception as e:
@@ -110,16 +112,19 @@ async def get_characters():
             {"id": "main_mentor", "name": "Main Mentor", "description": "Your guide to finding the right mentor"},
             {"id": "einstein", "name": "Albert Einstein", "description": "Physics and problem-solving"},
             {"id": "shakespeare", "name": "William Shakespeare", "description": "Writing and creativity"},
-            {"id": "marie_curie", "name": "Marie Curie", "description": "Chemistry and research"}
+            {"id": "marie_curie", "name": "Marie Curie", "description": "Chemistry and research"},
         ]
     }
+
 
 # Health check endpoint
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
     # change for deploy test

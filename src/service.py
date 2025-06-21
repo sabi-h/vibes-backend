@@ -111,11 +111,12 @@ class PersonalityProfile:
             if basic_profile.get("name") and not self.name:  # Only update if not already set
                 self.name = basic_profile["name"]
             if basic_profile.get("bio"):
-                # Append new bio information rather than replacing
-                if self.bio:
-                    self.bio = f"{self.bio}. {basic_profile['bio']}"
-                else:
-                    self.bio = basic_profile["bio"]
+                new_bio = basic_profile["bio"]
+                # Only update bio if it's new information (not already contained in current bio)
+                if not self.bio:
+                    self.bio = new_bio
+                elif new_bio not in self.bio:  # Check if new info is already present
+                    self.bio = f"{self.bio}. {new_bio}"
 
             # Update personality traits with conversation-based analysis
             personality_updates = analysis.get("personality_updates", {})

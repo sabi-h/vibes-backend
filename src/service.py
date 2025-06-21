@@ -1,11 +1,12 @@
 import json
-import re
-from typing import List, Dict, Optional
-from openai import OpenAI
 import os
-from dotenv import load_dotenv
+from typing import Dict, List, Optional
 
-from .schemas import UserProfile
+from dotenv import load_dotenv
+from openai import OpenAI
+
+from .schemas import PERSONALITY_TRAITS, PROFILE_ANALYSIS_SCHEMA
+from .prompts import CHARACTER_PROMPTS, ENHANCED_PROFILE_EXTRACTOR_PROMPT
 
 # Load environment variables
 load_dotenv()
@@ -15,80 +16,154 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Simple global storage for demo
 conversation_history: List[Dict[str, str]] = []
-profile = UserProfile()
 
-# Character prompts
-CHARACTER_PROMPTS = {
-    "main_mentor": """You are a wise, friendly mentor helping young students discover their interests. 
-    Ask thoughtful questions about what excites them, what they're curious about, and what they enjoy doing.
-    Pay attention to their responses to understand their learning style and personality.
-    
-    After 3-4 exchanges, recommend one specialist mentor based on their interests:
-    - Einstein for physics/science/problem-solving
-    - Shakespeare for writing/creativity/storytelling
-    - Marie Curie for chemistry/research/discovery
-    
-    Keep responses concise and engaging. If they mention their name, acknowledge it warmly.""",
-    "einstein": """You are Albert Einstein. You explain physics and science with wonder and enthusiasm.
-    Use thought experiments and simple analogies. Share your curiosity about how the universe works.
-    Speak warmly and encouragingly, with occasional humor. Make complex ideas accessible.""",
-    "shakespeare": """You are William Shakespeare. You help students explore creative writing and storytelling.
-    Speak poetically but not overly complex. Use metaphors and encourage imagination.
-    Share wisdom about human nature and the power of words.""",
-    "marie_curie": """You are Marie Curie. You inspire students about chemistry, research, and perseverance.
-    Share your passion for discovery and the scientific method. Be encouraging about challenges,
-    especially for young women in science.""",
-}
 
-# Profile extraction prompt
-PROFILE_EXTRACTOR_PROMPT = """You are a profile analyzer. Based on the latest user message and conversation context, determine if there's new profile-relevant information.
+class PersonalityProfile:
+    """Simplified profile class that updates on every message"""
 
-Current profile information:
-- Name: {name}
-- Bio: {bio}
-- Energy/Drive: {energy_drive}
-- Information Style: {information_style}
+    def __init__(self):
+        # Basic profile info only
+        self.name: Optional[str] = None
+        self.bio: Optional[str] = None
 
-Look for ANY hints about the user's personality, interests, learning preferences, or personal details.
+        # Personality tracking only
+        self.personality_scores: Dict[str, float] = {trait: 5.0 for trait in PERSONALITY_TRAITS.keys()}
+        self.trait_evidence: Dict[str, List[str]] = {trait: [] for trait in PERSONALITY_TRAITS.keys()}
 
-You MUST respond with ONLY a valid JSON object in this exact format:
+    def update_from_message(self, message: str):
+        """Update profile from a single user message"""
+        try:
+            # Create system prompt for analysis
+            system_prompt = f"""
+            You are a personality and profile analyzer. Analyze user messages to extract profile information.
+            
+            Current personality scores (1-10 scale): {self.personality_scores}
+            
+            Available personality traits: {list(PERSONALITY_TRAITS.keys())}
+            
+            Extract:
+            - Basic profile info: name and bio only if explicitly mentioned
+            - Personality trait updates: only if clear behavioral evidence present
+            - Career insights: passions, strengths, motivations, work preferences, potential career paths
+            
+            Only include fields if there is clear evidence. Set has_updates to false if no meaningful information detected.
+            """
 
-If no new information:
-{{"has_updates": false}}
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Analyze this message: {message}"},
+                ],
+                temperature=0.3,
+                max_tokens=500,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {"name": "profile_analysis", "strict": True, "schema": PROFILE_ANALYSIS_SCHEMA},
+                },
+            )
 
-If there is new information:
-{{
-  "has_updates": true,
-  "energy_drive": "description of their energy/motivation style",
-  "information_style": "description of how they prefer to learn", 
-  "bio": "brief description of their interests",
-  "name": "their name if mentioned"
-}}
+            # Parse response - guaranteed to be valid JSON due to structured output
+            analysis = json.loads(response.choices[0].message.content)
 
-Only include the fields that have NEW information. Do not include fields that already match the current profile.
+            if not analysis.get("has_updates", False):
+                return
 
-Examples:
-- User says "I love math" → {{"has_updates": true, "bio": "interested in mathematics"}}
-- User says "I learn from books" → {{"has_updates": true, "information_style": "prefers learning from books"}}
-- User says "My name is Alex" → {{"has_updates": true, "name": "Alex"}}
+            # Update basic info (name, bio only)
+            basic_profile = analysis.get("basic_profile", {})
+            if basic_profile.get("name"):
+                self.name = basic_profile["name"]
+            if basic_profile.get("bio"):
+                self.bio = basic_profile["bio"]
 
-Respond with ONLY the JSON object, no other text whatsoever."""
+            # Update personality traits
+            personality_updates = analysis.get("personality_updates", {})
+            for trait_name, update_info in personality_updates.items():
+                if trait_name in self.personality_scores:
+                    new_score = float(update_info.get("score", 5))
+                    evidence = update_info.get("evidence", "")
+
+                    # Simple weighted average (give new evidence 30% weight)
+                    current_score = self.personality_scores[trait_name]
+                    self.personality_scores[trait_name] = (current_score * 0.7) + (new_score * 0.3)
+
+                    # Add evidence
+                    self.trait_evidence[trait_name].append(evidence)
+                    # Keep only last 2 pieces of evidence
+                    if len(self.trait_evidence[trait_name]) > 2:
+                        self.trait_evidence[trait_name] = self.trait_evidence[trait_name][-2:]
+
+            print(
+                f"Profile updated from message. Basic profile updates: {bool(basic_profile)}, Personality updates: {list(personality_updates.keys())}"
+            )
+
+        except json.JSONDecodeError as e:
+            print(f"JSON parsing error (should not happen with structured output): {e}")
+        except Exception as e:
+            print(f"Profile update error: {e}")
+
+    def get_trait_description(self, trait_name: str) -> str:
+        """Get human-readable description of trait score"""
+        if trait_name not in self.personality_scores:
+            return "Unknown trait"
+
+        score = self.personality_scores[trait_name]
+        trait_info = PERSONALITY_TRAITS[trait_name]
+
+        if score <= 3:
+            return f"Strongly {trait_info['left']}"
+        elif score <= 4:
+            return f"Moderately {trait_info['left']}"
+        elif score <= 6:
+            return "Balanced/Neutral"
+        elif score <= 7:
+            return f"Moderately {trait_info['right']}"
+        else:
+            return f"Strongly {trait_info['right']}"
+
+    def to_dict(self) -> Dict:
+        """Convert profile to dictionary"""
+        return {
+            # Basic info only
+            "name": self.name,
+            "bio": self.bio,
+            # Personality analysis only
+            "personality_scores": self.personality_scores.copy(),
+            "personality_descriptions": {
+                trait: self.get_trait_description(trait) for trait in PERSONALITY_TRAITS.keys()
+            },
+            "recent_evidence": {trait: evidence for trait, evidence in self.trait_evidence.items() if evidence},
+        }
+
+    def reset(self):
+        """Reset profile to initial state"""
+        self.__init__()
+
+
+# Global profile instance
+user_profile = PersonalityProfile()
 
 
 class MentorService:
     @staticmethod
-    def get_profile() -> UserProfile:
+    def get_profile() -> Dict:
         """Get current user profile"""
-        return profile
+        return user_profile.to_dict()
+
+    @staticmethod
+    def get_personality_traits() -> Dict:
+        """Get personality trait definitions"""
+        return PERSONALITY_TRAITS
 
     @staticmethod
     def get_characters() -> List[Dict[str, str]]:
         """Get available characters"""
         return [
-            {"id": "main_mentor", "name": "Main Mentor", "description": "Your guide to finding the right mentor"},
+            {"id": "mentor", "name": "Main Mentor", "description": "Your guide to finding the right mentor"},
             {"id": "einstein", "name": "Albert Einstein", "description": "Physics and problem-solving"},
             {"id": "shakespeare", "name": "William Shakespeare", "description": "Writing and creativity"},
             {"id": "marie_curie", "name": "Marie Curie", "description": "Chemistry and research"},
+            {"id": "warren_buffet", "name": "Warren Buffet", "description": "Broad Finance Field"},
         ]
 
     @staticmethod
@@ -99,9 +174,9 @@ class MentorService:
     @staticmethod
     def reset_demo() -> None:
         """Reset conversation and profile for demo"""
-        global conversation_history, profile
+        global conversation_history, user_profile
         conversation_history.clear()
-        profile = UserProfile()
+        user_profile.reset()
 
     @staticmethod
     def chat_with_character(character: str, message: str) -> str:
@@ -109,12 +184,15 @@ class MentorService:
         if character not in CHARACTER_PROMPTS:
             raise ValueError(f"Unknown character: {character}")
 
+        # UPDATE PROFILE ON EVERY MESSAGE - This is the key change
+        user_profile.update_from_message(message)
+
         # Add user message to history
         conversation_history.append({"role": "user", "content": message})
 
-        # Prepare messages for OpenAI (include system prompt + recent history)
+        # Prepare messages for OpenAI
         messages = [{"role": "system", "content": CHARACTER_PROMPTS[character]}]
-        messages.extend(conversation_history[-10:])  # Keep last 10 messages for context
+        messages.extend(conversation_history[-10:])
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -126,115 +204,43 @@ class MentorService:
         ai_message = response.choices[0].message.content
         conversation_history.append({"role": "assistant", "content": ai_message})
 
-        # Update profile on every user message (but only if there's new info)
-        MentorService._update_profile_from_latest_message()
-
         return ai_message
 
     @staticmethod
-    def _update_profile_from_latest_message():
-        """Update profile based on the latest user message if it contains relevant info"""
-        global profile
+    def get_personality_summary() -> str:
+        """Get a human-readable personality summary"""
+        profile_dict = user_profile.to_dict()
 
-        try:
-            if len(conversation_history) < 2:  # Need at least one exchange
-                print("Not enough conversation history")
-                return
+        summary_parts = []
 
-            # Get the latest user message and some context
-            latest_user_msg = None
-            context_messages = []
+        # Basic info section
+        if profile_dict["name"]:
+            summary_parts.append(f"Profile for: {profile_dict['name']}")
+        if profile_dict["bio"]:
+            summary_parts.append(f"Background: {profile_dict['bio']}")
 
-            for msg in reversed(conversation_history[-6:]):  # Look at last 6 messages for context
-                if msg["role"] == "user" and latest_user_msg is None:
-                    latest_user_msg = msg["content"]
-                context_messages.insert(0, f"{msg['role']}: {msg['content']}")
+        # Personality traits section
+        summary_parts.append("\nPersonality Traits:")
+        for trait_name, trait_info in PERSONALITY_TRAITS.items():
+            score = profile_dict["personality_scores"][trait_name]
+            description = profile_dict["personality_descriptions"][trait_name]
+            summary_parts.append(f"  • {trait_info['scale']}: {score:.1f}/10 ({description})")
 
-            if not latest_user_msg:
-                print("No user message found")
-                return
+        return "\n".join(summary_parts)
 
-            context_text = "\n".join(context_messages)
-            print(f"Analyzing message: '{latest_user_msg}'")
+    @staticmethod
+    def get_career_recommendations() -> Dict:
+        """Get career recommendations based on current profile"""
+        profile_dict = user_profile.to_dict()
 
-            # Format the prompt with current profile (handle empty fields)
-            formatted_prompt = PROFILE_EXTRACTOR_PROMPT.format(
-                name=profile.name or "Not provided",
-                bio=profile.bio or "Not provided",
-                energy_drive=profile.energy_drive or "Not provided",
-                information_style=profile.information_style or "Not provided",
-            )
-
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": formatted_prompt},
-                    {
-                        "role": "user",
-                        "content": f"Latest user message: '{latest_user_msg}'\n\nRecent context:\n{context_text}",
-                    },
-                ],
-                temperature=0.2,  # Lower temperature for more consistent analysis
-                max_tokens=200,
-            )
-
-            # Debug: Print the raw response
-            raw_response = response.choices[0].message.content
-            print(f"Raw AI response: {raw_response}")
-
-            # Parse and update profile only if there are actual updates
-            try:
-                # Clean the response - sometimes AI adds extra text
-                cleaned_response = raw_response.strip()
-                if not cleaned_response.startswith("{"):
-                    # Try to find JSON in the response
-                    json_match = re.search(r"\{.*\}", cleaned_response, re.DOTALL)
-                    if json_match:
-                        cleaned_response = json_match.group()
-                    else:
-                        print(f"No JSON found in response: {cleaned_response}")
-                        return
-
-                analysis = json.loads(cleaned_response)
-            except json.JSONDecodeError as e:
-                print(f"JSON parsing error: {e}")
-                print(f"Raw response: '{raw_response}'")
-                # Fallback: try to extract info manually for common cases
-                if "learn" in latest_user_msg.lower() and "book" in latest_user_msg.lower():
-                    analysis = {"has_updates": True, "information_style": "prefers learning from books and reading"}
-                    print("Using fallback analysis")
-                else:
-                    return
-
-            print(f"Parsed analysis: {analysis}")
-
-            if not analysis.get("has_updates", False):
-                print("No profile updates detected")
-                return  # No updates needed
-
-            # Update only the fields that have new information
-            updated_fields = []
-            if analysis.get("energy_drive"):
-                profile.energy_drive = analysis["energy_drive"]
-                updated_fields.append("energy_drive")
-            if analysis.get("information_style"):
-                profile.information_style = analysis["information_style"]
-                updated_fields.append("information_style")
-            if analysis.get("bio"):
-                profile.bio = analysis["bio"]
-                updated_fields.append("bio")
-            if analysis.get("name") and analysis["name"] != profile.name:
-                profile.name = analysis["name"]
-                updated_fields.append("name")
-
-            print(f"Profile updated fields: {updated_fields}")
-            print(
-                f"Current profile: name='{profile.name}', bio='{profile.bio}', energy_drive='{profile.energy_drive}', info_style='{profile.information_style}'"
-            )
-
-        except Exception as e:
-            print(f"Profile extraction error: {e}")
-            import traceback
-
-            traceback.print_exc()
-            # Don't update profile if there's an error
+        return {
+            "name": profile_dict["name"],
+            "bio": profile_dict["bio"],
+            "personality_summary": {
+                trait: {
+                    "score": profile_dict["personality_scores"][trait],
+                    "description": profile_dict["personality_descriptions"][trait],
+                }
+                for trait in PERSONALITY_TRAITS.keys()
+            },
+        }

@@ -1,9 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import List, Dict
 
 from .service import MentorService
-from .schemas import UserProfile
 
 router = APIRouter()
 
@@ -23,7 +21,7 @@ async def root():
     return {"message": "Mentor API is running!"}
 
 
-@router.get("/profile", response_model=UserProfile, tags=["Profile"])
+@router.get("/profile", tags=["Profile"])
 async def get_profile():
     """Get current user profile"""
     return MentorService.get_profile()

@@ -73,39 +73,3 @@ CHARACTER_PROMPTS = {
         especially for young women in science.
     """,
 }
-
-
-ENHANCED_PROFILE_EXTRACTOR_PROMPT = """You are an expert personality and career analyst. Analyze the conversation to identify:
-
-1. BASIC PROFILE INFO (name, interests, background)
-2. PERSONALITY TRAITS (behavioral patterns and preferences)  
-3. CAREER-RELEVANT INSIGHTS (passions, strengths, motivations)
-
-CURRENT PROFILE SCORES (1-10 scale where 1=left trait, 10=right trait, 5=neutral):
-{current_scores}
-
-PERSONALITY DIMENSIONS TO ANALYZE:
-1. Energy & Social Drive: Introverted (1) ←→ Extroverted (10)
-2. Information Style: Concrete/Sensing (1) ←→ Abstract/Intuitive (10)  
-3. Decision Lens: Analytical/Thinking (1) ←→ Relational/Feeling (10)
-4. Structure Preference: Flexible (1) ←→ Planned (10)
-5. Emotional Stability: Calm (1) ←→ Reactive (10)
-6. Risk & Ambition: Cautious/Content (1) ←→ Risk-Seeking/Ambitious (10)
-7. Cooperation Style: Competitive (1) ←→ Supportive (10)
-8. Focus Lens: Big-Picture (1) ←→ Detail-Centric (10)
-9. Pace & Decisiveness: Deliberative (1) ←→ Rapid (10)
-10. Control & Autonomy: Delegating (1) ←→ Hands-On/Independent (10)
-
-ANALYSIS GUIDELINES:
-- Look for communication patterns, word choices, decision-making style, social preferences
-- Consider: How detailed are responses? Do they focus on facts or feelings? Risk tolerance?
-- Pay attention to: planning tendencies, response speed, leadership style, stress reactions
-- Only update scores with clear behavioral evidence from the conversation
-- Small updates (±1-2 points) for subtle indicators, larger updates (±3-5) for strong evidence
-
-Evidence examples:
-- "I like to plan everything out" → structure_preference: score 8
-- Short, direct responses → introverted tendencies  
-- Asks about feelings/relationships → relational decision lens
-- Mentions taking risks → risk_ambition higher score
-- Talks about leading teams → control_autonomy higher score"""

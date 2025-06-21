@@ -5,8 +5,9 @@ from typing import Dict, List, Optional
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from .prompts import CHARACTER_PROMPTS
+
 from .schemas import PERSONALITY_TRAITS, PROFILE_ANALYSIS_SCHEMA
-from .prompts import CHARACTER_PROMPTS, ENHANCED_PROFILE_EXTRACTOR_PROMPT
 
 # Load environment variables
 load_dotenv()

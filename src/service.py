@@ -7,7 +7,7 @@ from openai import OpenAI
 
 from .prompts import CHARACTER_PROMPTS
 
-from .schemas import PERSONALITY_TRAITS, PROFILE_ANALYSIS_SCHEMA
+from .schemas import PERSONALITY_TRAITS, PROFILE_ANALYSIS_SCHEMA, CHARACTER_RECOMMENDATIONS_SCHEMA
 
 # Load environment variables
 load_dotenv()
@@ -155,6 +155,77 @@ class MentorService:
     def get_personality_traits() -> Dict:
         """Get personality trait definitions"""
         return PERSONALITY_TRAITS
+
+    @staticmethod
+    def get_character_recommendations() -> List[Dict]:
+        """Get 5 character recommendations based on user personality profile"""
+        try:
+            profile_dict = user_profile.to_dict()
+            print(profile_dict)
+            # Get available characters for the AI to choose from
+            available_characters = MentorService.get_characters()
+            character_list = "\n".join(
+                [
+                    f"- {char['id']}: {char['name']} - {char['description']}"
+                    for char in available_characters
+                    if char["id"] != "mentor"
+                ]
+            )
+
+            system_prompt = f"""
+            Based on the user's bio and personality profile, recommend exactly 5 mentors who would be most beneficial.
+            
+            User's Personality Scores (1-10 scale):
+            {json.dumps(profile_dict['personality_scores'], indent=2)}
+            
+            Available Characters:
+            {character_list}
+            
+            Select 5 characters that best match the user's personality and development needs.
+            Ensure all character_id values exactly match the IDs from the available characters list.
+            """
+
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": "Recommend 5 mentors for my development."},
+                ],
+                temperature=0.3,
+                max_tokens=800,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "character_recommendations",
+                        "strict": True,
+                        "schema": CHARACTER_RECOMMENDATIONS_SCHEMA,
+                    },
+                },
+            )
+
+            # Parse and enrich the AI response
+            ai_response = json.loads(response.choices[0].message.content)
+
+            # Add character details to recommendations
+            enriched_recommendations = []
+            for rec in ai_response["recommended_characters"]:
+                char_info = next((char for char in available_characters if char["id"] == rec["character_id"]), None)
+
+                if char_info:
+                    enriched_recommendations.append(
+                        {
+                            "character_id": rec["character_id"],
+                            "character_name": char_info["name"],
+                            "character_description": char_info["description"],
+                            "reasoning": rec["reasoning"],
+                        }
+                    )
+
+            return enriched_recommendations
+
+        except Exception as e:
+            print(f"Error generating character recommendations: {e}")
+            return []
 
     @staticmethod
     def get_characters() -> List[Dict[str, str]]:

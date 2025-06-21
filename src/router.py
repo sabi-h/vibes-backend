@@ -61,6 +61,16 @@ async def reset_demo():
     return {"message": "Demo reset"}
 
 
+@router.get("/recommendations", tags=["Recommendations"])
+async def get_character_recommendations():
+    """Get 5 character recommendations based on user personality profile"""
+    try:
+        recommended_characters = MentorService.get_character_recommendations()
+        return {"recommended_characters": recommended_characters}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating recommendations: {str(e)}")
+
+
 @router.get("/health")
 async def health_check():
     """Health check endpoint"""

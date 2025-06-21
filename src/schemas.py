@@ -186,3 +186,25 @@ PERSONALITY_TRAITS = {
         "description": "The person's preferred level of control and autonomy",
     },
 }
+
+CHARACTER_RECOMMENDATIONS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "recommended_characters": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "character_id": {"type": "string", "description": "The ID of the recommended character"},
+                    "reasoning": {"type": "string", "description": "Brief reason why this character is recommended"},
+                },
+                "required": ["character_id", "reasoning"],
+                "additionalProperties": False,
+            },
+            "minItems": 5,
+            "maxItems": 5,
+        }
+    },
+    "required": ["recommended_characters"],
+    "additionalProperties": False,
+}

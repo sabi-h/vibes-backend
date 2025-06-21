@@ -161,10 +161,28 @@ class MentorService:
         """Get available characters"""
         return [
             {"id": "mentor", "name": "Main Mentor", "description": "Your guide to finding the right mentor"},
-            {"id": "einstein", "name": "Albert Einstein", "description": "Physics and problem-solving"},
-            {"id": "shakespeare", "name": "William Shakespeare", "description": "Writing and creativity"},
-            {"id": "marie_curie", "name": "Marie Curie", "description": "Chemistry and research"},
-            {"id": "warren_buffet", "name": "Warren Buffet", "description": "Broad Finance Field"},
+            {"id": "florence_nightingale", "name": "Florence Nightingale", "description": "Healthcare and compassion"},
+            {
+                "id": "maria_montessori",
+                "name": "Maria Montessori",
+                "description": "Innovative education and child development",
+            },
+            {
+                "id": "george_carver",
+                "name": "George Washington Carver",
+                "description": "Agriculture and sustainability",
+            },
+            {"id": "brunel", "name": "Isambard Kingdom Brunel", "description": "Engineering and infrastructure"},
+            {"id": "ada_lovelace", "name": "Ada Lovelace", "description": "Computing and mathematical logic"},
+            {"id": "walt_disney", "name": "Walt Disney", "description": "Creativity and entertainment"},
+            {"id": "warren_buffet", "name": "Warren Buffett", "description": "Finance and investing"},
+            {"id": "rbg", "name": "Ruth Bader Ginsburg", "description": "Law and justice"},
+            {"id": "marie_curie", "name": "Marie Curie", "description": "Chemistry and scientific research"},
+            {"id": "greta_thunberg", "name": "Greta Thunberg", "description": "Climate activism and sustainability"},
+            {"id": "neil_armstrong", "name": "Neil Armstrong", "description": "Space exploration and aerospace"},
+            {"id": "coco_chanel", "name": "Coco Chanel", "description": "Fashion and design"},
+            {"id": "elon_musk", "name": "Elon Musk", "description": "Technology, transport, and innovation"},
+            {"id": "anthony_bourdain", "name": "Anthony Bourdain", "description": "Food, travel, and global culture"},
         ]
 
     @staticmethod

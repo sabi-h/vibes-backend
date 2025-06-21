@@ -20,7 +20,7 @@ conversation_history: List[Dict[str, str]] = []
 
 
 class PersonalityProfile:
-    """Simplified profile class that updates on every message"""
+    """Enhanced profile class that updates based on entire conversation history"""
 
     def __init__(self):
         # Basic profile info only
@@ -31,22 +31,58 @@ class PersonalityProfile:
         self.personality_scores: Dict[str, float] = {trait: 5.0 for trait in PERSONALITY_TRAITS.keys()}
         self.trait_evidence: Dict[str, List[str]] = {trait: [] for trait in PERSONALITY_TRAITS.keys()}
 
+        # Track when profile was last updated to avoid redundant analysis
+        self.last_update_message_count = 0
+
     def update_from_message(self, message: str):
-        """Update profile from a single user message"""
+        """Update profile from a single user message (legacy method - kept for compatibility)"""
+        self._update_from_conversation([{"role": "user", "content": message}])
+
+    def update_from_conversation_history(self, conversation: List[Dict[str, str]]):
+        """Update profile from entire conversation history"""
+        # Only update if there are new messages or significant conversation growth
+        user_messages = [msg for msg in conversation if msg.get("role") == "user"]
+
+        if len(user_messages) <= self.last_update_message_count:
+            return
+
+        # Update based on recent conversation context
+        self._update_from_conversation(conversation)
+        self.last_update_message_count = len(user_messages)
+
+    def _update_from_conversation(self, conversation: List[Dict[str, str]]):
+        """Internal method to update profile from conversation data"""
         try:
-            # Create system prompt for analysis
+            # Prepare conversation context for analysis
+            conversation_text = self._format_conversation_for_analysis(conversation)
+
+            if not conversation_text.strip():
+                return
+
+            # Create system prompt for comprehensive analysis
             system_prompt = f"""
-            You are a personality and profile analyzer. Analyze user messages to extract profile information.
+            You are a personality and profile analyzer. Analyze the entire conversation to extract comprehensive profile information.
             
             Current personality scores (1-10 scale): {self.personality_scores}
+            Current profile: Name: {self.name or 'Unknown'}, Bio: {self.bio or 'Not provided'}
             
             Available personality traits: {list(PERSONALITY_TRAITS.keys())}
             
-            Extract:
-            - Basic profile info: name and bio only if explicitly mentioned
-            - Personality trait updates: only if clear behavioral evidence present
-            - Career insights: passions, strengths, motivations, work preferences, potential career paths
+            Analyze the ENTIRE conversation context to extract:
+            - Basic profile info: name and bio if mentioned anywhere in the conversation
+            - Personality trait assessments: based on cumulative behavioral evidence across all messages
+            - Career insights: interests, goals, strengths shown throughout the conversation
             
+            Consider:
+            - Patterns of communication style and preferences
+            - Topics the user is passionate about or avoids
+            - Problem-solving approaches demonstrated
+            - Social interaction preferences
+            - Values and motivations expressed
+            - Decision-making patterns
+            - Emotional responses and coping strategies
+            
+            Provide updated scores based on the full conversation context, not just individual messages.
             Only include fields if there is clear evidence. Set has_updates to false if no meaningful information detected.
             """
 
@@ -54,10 +90,10 @@ class PersonalityProfile:
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Analyze this message: {message}"},
+                    {"role": "user", "content": f"Analyze this complete conversation:\n\n{conversation_text}"},
                 ],
                 temperature=0.3,
-                max_tokens=500,
+                max_tokens=800,
                 response_format={
                     "type": "json_schema",
                     "json_schema": {"name": "profile_analysis", "strict": True, "schema": PROFILE_ANALYSIS_SCHEMA},
@@ -72,36 +108,56 @@ class PersonalityProfile:
 
             # Update basic info (name, bio only)
             basic_profile = analysis.get("basic_profile", {})
-            if basic_profile.get("name"):
+            if basic_profile.get("name") and not self.name:  # Only update if not already set
                 self.name = basic_profile["name"]
             if basic_profile.get("bio"):
-                self.bio = basic_profile["bio"]
+                # Append new bio information rather than replacing
+                if self.bio:
+                    self.bio = f"{self.bio}. {basic_profile['bio']}"
+                else:
+                    self.bio = basic_profile["bio"]
 
-            # Update personality traits
+            # Update personality traits with conversation-based analysis
             personality_updates = analysis.get("personality_updates", {})
             for trait_name, update_info in personality_updates.items():
                 if trait_name in self.personality_scores:
                     new_score = float(update_info.get("score", 5))
                     evidence = update_info.get("evidence", "")
 
-                    # Simple weighted average (give new evidence 30% weight)
+                    # For conversation-based updates, give more weight to comprehensive analysis
+                    # Use 50% weight for new analysis since it's based on full context
                     current_score = self.personality_scores[trait_name]
-                    self.personality_scores[trait_name] = (current_score * 0.7) + (new_score * 0.3)
+                    self.personality_scores[trait_name] = (current_score * 0.5) + (new_score * 0.5)
 
-                    # Add evidence
-                    self.trait_evidence[trait_name].append(evidence)
-                    # Keep only last 2 pieces of evidence
-                    if len(self.trait_evidence[trait_name]) > 2:
-                        self.trait_evidence[trait_name] = self.trait_evidence[trait_name][-2:]
+                    # Update evidence with conversation-based insights
+                    if evidence:
+                        self.trait_evidence[trait_name].append(f"From conversation: {evidence}")
+                        # Keep only last 3 pieces of evidence for conversation-based updates
+                        if len(self.trait_evidence[trait_name]) > 3:
+                            self.trait_evidence[trait_name] = self.trait_evidence[trait_name][-3:]
 
             print(
-                f"Profile updated from message. Basic profile updates: {bool(basic_profile)}, Personality updates: {list(personality_updates.keys())}"
+                f"Profile updated from conversation history. Messages analyzed: {len([m for m in conversation if m.get('role') == 'user'])}, "
+                f"Basic profile updates: {bool(basic_profile)}, Personality updates: {list(personality_updates.keys())}"
             )
 
         except json.JSONDecodeError as e:
             print(f"JSON parsing error (should not happen with structured output): {e}")
         except Exception as e:
             print(f"Profile update error: {e}")
+
+    def _format_conversation_for_analysis(self, conversation: List[Dict[str, str]]) -> str:
+        """Format conversation for AI analysis"""
+        formatted_messages = []
+        for msg in conversation[-20:]:  # Analyze last 20 messages for context
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            if role == "user":
+                formatted_messages.append(f"User: {content}")
+            elif role == "assistant":
+                formatted_messages.append(f"Mentor: {content}")
+
+        return "\n".join(formatted_messages)
 
     def get_trait_description(self, trait_name: str) -> str:
         """Get human-readable description of trait score"""
@@ -134,6 +190,7 @@ class PersonalityProfile:
                 trait: self.get_trait_description(trait) for trait in PERSONALITY_TRAITS.keys()
             },
             "recent_evidence": {trait: evidence for trait, evidence in self.trait_evidence.items() if evidence},
+            "messages_analyzed": self.last_update_message_count,
         }
 
     def reset(self):
@@ -274,11 +331,11 @@ class MentorService:
         if character not in CHARACTER_PROMPTS:
             raise ValueError(f"Unknown character: {character}")
 
-        # UPDATE PROFILE ON EVERY MESSAGE - This is the key change
-        user_profile.update_from_message(message)
-
-        # Add user message to history
+        # Add user message to history first
         conversation_history.append({"role": "user", "content": message})
+
+        # UPDATE PROFILE BASED ON ENTIRE CONVERSATION HISTORY - This is the key change
+        user_profile.update_from_conversation_history(conversation_history)
 
         # Prepare messages for OpenAI
         messages = [{"role": "system", "content": CHARACTER_PROMPTS[character]}]
@@ -297,6 +354,13 @@ class MentorService:
         return ai_message
 
     @staticmethod
+    def force_profile_update() -> Dict:
+        """Force a complete profile update based on current conversation history"""
+        user_profile.last_update_message_count = 0  # Reset to force update
+        user_profile.update_from_conversation_history(conversation_history)
+        return user_profile.to_dict()
+
+    @staticmethod
     def get_personality_summary() -> str:
         """Get a human-readable personality summary"""
         profile_dict = user_profile.to_dict()
@@ -308,6 +372,8 @@ class MentorService:
             summary_parts.append(f"Profile for: {profile_dict['name']}")
         if profile_dict["bio"]:
             summary_parts.append(f"Background: {profile_dict['bio']}")
+
+        summary_parts.append(f"\nMessages analyzed: {profile_dict.get('messages_analyzed', 0)}")
 
         # Personality traits section
         summary_parts.append("\nPersonality Traits:")
@@ -332,5 +398,11 @@ class MentorService:
                     "description": profile_dict["personality_descriptions"][trait],
                 }
                 for trait in PERSONALITY_TRAITS.keys()
+            },
+            "conversation_context": {
+                "messages_analyzed": profile_dict.get("messages_analyzed", 0),
+                "evidence_collected": sum(
+                    len(evidence) for evidence in profile_dict.get("recent_evidence", {}).values()
+                ),
             },
         }

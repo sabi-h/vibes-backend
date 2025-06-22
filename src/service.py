@@ -257,6 +257,9 @@ class MentorService:
             4. Match mentors whose expertise directly relates to what they've discussed
             5. Focus on practical help the mentors could provide based on conversation content
             6. Ensure all character_id values exactly match the IDs from the available characters list
+            7. IMPORTANT: Order the recommendations from BEST MATCH (first) to LEAST MATCH (fifth) based on relevance to the conversation
+            
+            Return the mentors in descending order of relevance - the first mentor should be the absolute best match based on what the user has discussed, the second should be the next best match, and so on.
             
             Ignore any personality scores or profiles - base recommendations purely on the conversation content and what the user has actually said.
             """
@@ -267,7 +270,7 @@ class MentorService:
                     {"role": "system", "content": system_prompt},
                     {
                         "role": "user",
-                        "content": "Based only on what I've said in our conversation, recommend 5 mentors who could help me most.",
+                        "content": "Based only on what I've said in our conversation, recommend 5 mentors who could help me most. Order them from best match to least match.",
                     },
                 ],
                 temperature=0.3,

@@ -87,7 +87,7 @@ class PersonalityProfile:
             """
 
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"Analyze this complete conversation:\n\n{conversation_text}"},
@@ -216,10 +216,8 @@ class MentorService:
 
     @staticmethod
     def get_character_recommendations() -> List[Dict]:
-        """Get 5 character recommendations based on user personality profile"""
+        """Get 5 character recommendations based on conversation history only"""
         try:
-            profile_dict = user_profile.to_dict()
-            print(profile_dict)
             # Get available characters for the AI to choose from
             available_characters = MentorService.get_characters()
             character_list = "\n".join(
@@ -230,24 +228,47 @@ class MentorService:
                 ]
             )
 
+            # Format conversation history for context
+            conversation_context = ""
+            if conversation_history:
+                print(conversation_history)
+                recent_messages = conversation_history[-20:]  # Last 20 messages for context
+                conversation_context = "\n".join(
+                    [
+                        f"{msg.get('role', 'unknown').title()}: {msg.get('content', '')}"
+                        for msg in recent_messages
+                        if msg.get("content")
+                    ]
+                )
+
             system_prompt = f"""
-            Based on the user's bio and personality profile, recommend exactly 5 mentors who would be most beneficial.
+            Based ONLY on the chat conversation history below, recommend exactly 5 mentors who would be most beneficial for this user's development.
             
-            User's Personality Scores (1-10 scale):
-            {json.dumps(profile_dict['personality_scores'], indent=2)}
+            Conversation History:
+            {conversation_context if conversation_context else "No conversation history available"}
             
             Available Characters:
             {character_list}
             
-            Select 5 characters that best match the user's personality and development needs.
-            Ensure all character_id values exactly match the IDs from the available characters list.
+            Instructions:
+            1. Analyze what the user talks about, their interests, challenges, and goals from the conversation
+            2. Look for topics they're passionate about or struggling with
+            3. Identify their communication style and preferences
+            4. Match mentors whose expertise directly relates to what they've discussed
+            5. Focus on practical help the mentors could provide based on conversation content
+            6. Ensure all character_id values exactly match the IDs from the available characters list
+            
+            Ignore any personality scores or profiles - base recommendations purely on the conversation content and what the user has actually said.
             """
 
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4o",
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": "Recommend 5 mentors for my development."},
+                    {
+                        "role": "user",
+                        "content": "Based only on what I've said in our conversation, recommend 5 mentors who could help me most.",
+                    },
                 ],
                 temperature=0.3,
                 max_tokens=800,
@@ -343,7 +364,7 @@ class MentorService:
         messages.extend(conversation_history[-10:])
 
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=messages,
             temperature=0.8,
             max_tokens=200,

@@ -5,14 +5,14 @@ from .router import router
 
 app = FastAPI(title="Mentor API", description="AI Mentors for Student Learning", version="1.0.0")
 
-# Configure CORS
+# Add CORS middleware FIRST, before any routes
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change to your frontend URL in production
+    allow_origins=["*"],  # Or ["https://mentor-vibes.netlify.app"]
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # Include router
 app.include_router(router)
 
